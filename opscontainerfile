@@ -1,0 +1,49 @@
+# Use UBI as the base image
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.4-1194 AS builder
+ARG kubectlversion=v1.31.0
+ARG helmversion=3.14.3
+
+# Install necessary dependencies
+RUN microdnf -y update && microdnf -y install \
+    gcc \
+    gzip \
+    gcc-c++ \
+    make \
+    openssl-devel \
+    libffi-devel \
+    python3 \
+    redhat-rpm-config \
+    unzip \
+    git \
+    tar
+
+
+RUN curl -LO "https://dl.k8s.io/release/${kubectlversion}/bin/linux/amd64/kubectl" \
+    && curl -LO "https://dl.k8s.io/${kubectlversion}/bin/linux/amd64/kubectl.sha256" \
+    && chmod +x kubectl \
+    && mv kubectl /usr/local/bin/
+
+RUN curl -LO "https://get.helm.sh/helm-v${helmversion}-linux-amd64.tar.gz" \
+    && tar -zxvf "helm-v${helmversion}-linux-amd64.tar.gz" \
+    && mv linux-amd64/helm /usr/local/bin/helm
+
+
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.4-1194
+COPY --from=builder /usr/local/bin/kubectl /usr/local/bin/kubectl
+COPY --from=builder /usr/local/bin/helm /usr/local/bin/helm
+
+# Install Code Server
+RUN curl -fsSL https://code-server.dev/install.sh | sh
+# Install VS Code extensions for Ansible, YAML, and Python
+RUN code-server --install-extension redhat.vscode-yaml \
+    && code-server --install-extension ms-vsts.team \
+    # && code-server --install-extension ms-vscode.azurecli \
+    && code-server --install-extension ms-kubernetes-tools.vscode-kubernetes-tools
+
+# Clean Up
+RUN microdnf -y clean all
+# Expose the code-server port
+EXPOSE 8080
+
+# Set the entrypoint command to start vscode-server
+ENTRYPOINT ["code-server", "--auth", "none", "--host", "0.0.0.0", "--port", "8080", "--disable-telemetry"]
